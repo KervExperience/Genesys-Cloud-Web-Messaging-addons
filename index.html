@@ -4,6 +4,14 @@
     <title>Web Messenger Example</title>
   </head>
   <body>
+
+    <!-- Copyright 2024 Kerv Group -->
+    <!-- Copyright 2023 Look-back -->
+    <!-- Copyright 2023 Genesys Inc. -->
+    <!-- This software is licenced under the Apache-2.0 licence. Please refer to  -->
+    <!-- https://github.com/KervExperience/Genesys-Cloud-Web-Messaging-addons/blob/main/LICENSE -->
+    <!-- This software has been modifed by Kerv -->
+
     <!-- Genesys Web Messenger, please use your own snippet generated in Messenger Deployment -->
     <script type="text/javascript" charset="utf-8">
       (function (g, e, n, es, ys) {
@@ -30,6 +38,9 @@
           deploymentId: "xxxxxxxxxxxxxx",
         }
       );
+
+      // Added to hardcode messaging.customAttributes.customer_name to "You". This is needed if we are using unauthenticated chat.
+      Genesys("command", "Database.set", { messaging: { customAttributes: { customer_name: 'You' }}});
 
       // The transcript downloading and audible alerting codes start here
 
