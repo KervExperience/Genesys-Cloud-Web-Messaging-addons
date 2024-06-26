@@ -75,6 +75,26 @@
       // load wav file for audible alerting
       const ringing = new Audio("ringout.wav");
 
+      // popup download notification when trash button is clicked and confirmed by customer
+      Genesys(
+        "subscribe",
+        "MessagingService.conversationCleared",
+        function (data) {
+          console.log("MessagingService.conversationCleared:");
+          console.log(data);
+          if (transcripts.length > 0) {
+            let d = new Date(data.time);
+            if (confirm("Would you like to save the transcript?")) {
+              console.log("OK pressed");
+              download_file(`transcript-${d.toString()}.txt`, dynamic_text());
+            } else {
+              console.log("Cancel pressed");
+            }
+            transcripts.length = 0;
+          }
+        }
+      );
+      
       Genesys(
         "subscribe",
         "MessagingService.messagesReceived",
@@ -109,7 +129,8 @@
               for (const event of message.events) {
                 if (
                   event.eventType === "Presence" &&
-                  event.presence.type === "Disconnect"
+                  event.presence.type === "Disconnect" &&
+                  transcripts.length > 0
                 ) {
                   // disconnect message from agent
                   if (confirm("Would you like to save the transcript?")) {

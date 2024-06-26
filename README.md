@@ -1,11 +1,13 @@
 # Genesys-Cloud-Web-Messaging-addons
 * Transcript file generated on-the-fly automatically when agents disconnect the session
+* Transcript file generated on-the-fly automatically when customers disconnect the session
 * Transcript generated per session (instead of conversation)
 * Transcript in plain text format with timestamp and customer/agent names
 * Audible alerting played when a new message comes
 
 # Prerequisites
-The feature 'Conversation Disconnect' should be enabled in Web Messaging configuration. The creation of transcript is triggered by 'disconnect' message, which is generated when agents click the disconnect button.
+* The feature 'Conversation Disconnect' should be enabled in Web Messaging configuration. The creation of transcript is triggered by 'disconnect' message, which is generated when agents click the disconnect button.
+* The feature 'Clear Conversation' should be enabled if transcript file is required to be generated automatically when customers disconnect the session
 
 # References
 * https://developer.genesys.cloud/commdigital/digital/webmessaging/messengersdk/SDKCommandsEvents/messagingServicePlugin
