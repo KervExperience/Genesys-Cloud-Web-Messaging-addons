@@ -1,155 +1,492 @@
-<html>
-  <head lang="en">
-    <meta charset="UTF-8" />
-    <title>Web Messenger Example</title>
-  </head>
-  <body>
+<!-- Copyright 2024-2026 Kerv Group -->
+<!-- Copyright 2023 Look-back -->
+<!-- Copyright 2023 Genesys Inc. -->
+<!-- This software is licenced under the Apache-2.0 licence. Please refer to  -->
+<!-- https://github.com/KervExperience/Genesys-Cloud-Web-Messaging-addons/blob/main/LICENSE -->
+<!-- This software has been modifed by Kerv -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Genesys Web Messenger Transcript POC</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 40px 20px;
+      background: #f7f7f8;
+      color: #222;
+    }
 
-    <!-- Copyright 2024 Kerv Group -->
-    <!-- Copyright 2023 Look-back -->
-    <!-- Copyright 2023 Genesys Inc. -->
-    <!-- This software is licenced under the Apache-2.0 licence. Please refer to  -->
-    <!-- https://github.com/KervExperience/Genesys-Cloud-Web-Messaging-addons/blob/main/LICENSE -->
-    <!-- This software has been modifed by Kerv -->
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.06);
+    }
 
-    <!-- Genesys Web Messenger, please use your own snippet generated in Messenger Deployment -->
-    <script type="text/javascript" charset="utf-8">
-      (function (g, e, n, es, ys) {
-        g["_genesysJs"] = e;
-        g[e] =
-          g[e] ||
-          function () {
-            (g[e].q = g[e].q || []).push(arguments);
-          };
-        g[e].t = 1 * new Date();
-        g[e].c = es;
-        ys = document.createElement("script");
-        ys.async = 1;
-        ys.src = n;
-        ys.charset = "utf-8";
-        document.head.appendChild(ys);
-      })(
-        window,
-        "Genesys",
-        "https://apps.usw2.pure.cloud/genesys-bootstrap/genesys.min.js",
-        {
-          environment: "xxxx",
-          debug: true,
-          deploymentId: "xxxxxxxxxxxxxx",
-        }
-      );
+    h1 {
+      margin-top: 0;
+      font-size: 28px;
+    }
 
-      // Added to hardcode messaging.customAttributes.customer_name to "You". This is needed if we are using unauthenticated chat.
-      Genesys("command", "Database.set", { messaging: { customAttributes: { customer_name: 'You' }}});
+    h2 {
+      margin-top: 32px;
+      font-size: 20px;
+    }
 
-      // The transcript downloading and audible alerting codes start here
+    p, li {
+      line-height: 1.6;
+    }
 
-      const transcripts = []; // transcript cache
+    code, pre {
+      font-family: Consolas, Monaco, monospace;
+    }
 
-      // generate a combined string from the cache
-      function dynamic_text() {
-        return transcripts.join("\r\n");
+    .note {
+      background: #fff8e6;
+      border: 1px solid #f0d58a;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 20px 0;
+    }
+
+    .status {
+      background: #f3f6fb;
+      border: 1px solid #d7e2f2;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin: 20px 0;
+    }
+
+    .small {
+      font-size: 13px;
+      color: #666;
+    }
+
+    ul {
+      padding-left: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Genesys Web Messenger Transcript POC</h1>
+
+    <p>
+      This page is a standalone proof of concept for browser-based transcript download using
+      Genesys Web Messenger.
+    </p>
+
+    <div class="status">
+      <strong>What this example does</strong>
+      <ul>
+        <li>Loads the Genesys Web Messenger widget</li>
+        <li>Captures transcript lines client-side as messages arrive</li>
+        <li>Prompts the end user to save the transcript when the conversation is cleared</li>
+        <li>Prompts the end user to save the transcript when the conversation is disconnected</li>
+      </ul>
+    </div>
+
+    <div class="note">
+      <strong>Note:</strong> Debug logging is disabled by default. Set <code>debug</code> to
+      <code>true</code> to see console logs prefixed with <code>[Genesys Transcript]</code>.
+    </div>
+
+    <h2>Test notes</h2>
+    <ul>
+      <li>Customer clear path uses <code>MessagingService.conversationCleared</code></li>
+      <li>Disconnect path uses <code>MessagingService.conversationDisconnected</code></li>
+      <li>Transcript content is built from <code>MessagingService.messagesReceived</code></li>
+      <li>Messenger is configured to auto-open for ease of testing</li>
+    </ul>
+
+    <p class="small">
+      If you do not want the Messenger to auto-open, set <code>autoOpenMessenger</code> to
+      <code>false</code> in the config section below.
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const CONFIG = {
+        bootstrapUrl: 'https://apps.mypurecloud.ie/genesys-bootstrap/genesys.min.js',
+        environment: 'xxxx',
+        deploymentId: 'xxxxxxxxxxxxx',
+
+        autoOpenMessenger: true,
+        promptDownloadOnClear: true,
+        promptDownloadOnDisconnect: true,
+        transcriptContextLabel: 'Demo Support Widget (replace me)',
+
+        defaultCustomerName: 'Customer',
+        defaultAgentName: 'Agent',
+        defaultBotName: 'Bot',
+
+        debug: false
+      };
+
+      const state = {
+        transcripts: [],
+        subscriptionsBound: false,
+        disconnectHandled: false
+      };
+
+      function log() {
+        if (CONFIG.debug) console.log('[Genesys Transcript]', ...arguments);
       }
 
-      // generate downloadable text file on the fly
-      function download_file(name, contents, mime_type) {
-        mime_type = mime_type || "text/plain";
+      function warn() {
+        console.warn('[Genesys Transcript]', ...arguments);
+      }
 
-        let blob = new Blob([contents], { type: mime_type });
+      function error() {
+        console.error('[Genesys Transcript]', ...arguments);
+      }
 
-        let dlink = document.createElement("a");
-        dlink.download = name;
-        dlink.href = window.URL.createObjectURL(blob);
-        dlink.onclick = function (e) {
-          // revokeObjectURL needs a delay to work properly
-          var that = this;
-          setTimeout(function () {
-            window.URL.revokeObjectURL(that.href);
-          }, 1500);
+      function safeGet(obj, path, fallback) {
+        try {
+          const value = path.split('.').reduce((acc, part) => acc && acc[part], obj);
+          return (value !== undefined && value !== null) ? value : fallback;
+        } catch (e) {
+          return fallback;
+        }
+      }
+
+      function cleanText(text) {
+        if (text === null || text === undefined) return '';
+        return String(text).replace(/\s+/g, ' ').trim();
+      }
+
+      function formatTimestamp(value) {
+        if (!value) return new Date().toLocaleString();
+        const dt = new Date(value);
+        return isNaN(dt.getTime()) ? new Date().toLocaleString() : dt.toLocaleString();
+      }
+
+      function sanitiseFileDate(date) {
+        return (date || new Date()).toISOString().replace(/[:.]/g, '-');
+      }
+
+      function addTranscriptLine(line) {
+        if (!line) return;
+        state.transcripts.push(line);
+        log('Transcript line added:', line);
+      }
+
+      function clearTranscript() {
+        state.transcripts = [];
+        state.disconnectHandled = false;
+        log('Transcript cleared');
+      }
+
+      function resolveCustomerName(message) {
+        return (
+          safeGet(message, 'channel.metadata.customAttributes.customer_name', null) ||
+          safeGet(message, 'channel.from.nickname', null) ||
+          CONFIG.defaultCustomerName
+        );
+      }
+
+      function resolveAgentName(message) {
+        const originatingEntity = safeGet(message, 'originatingEntity', '');
+        const nickname = safeGet(message, 'channel.from.nickname', null);
+
+        if (typeof originatingEntity === 'string' && originatingEntity.toLowerCase().includes('bot')) {
+          return CONFIG.defaultBotName;
+        }
+
+        return nickname || CONFIG.defaultAgentName;
+      }
+
+      function detectMessageText(message) {
+        if (message && message.text) return cleanText(message.text);
+        if (safeGet(message, 'content.0.text', null)) return cleanText(safeGet(message, 'content.0.text', ''));
+        if (message && message.body) return cleanText(message.body);
+        return '';
+      }
+
+      function buildTranscriptText(reason) {
+        const header = [
+          'Genesys Web Messenger Transcript',
+          'Reason: ' + (reason || 'manual'),
+          'Generated: ' + new Date().toLocaleString(),
+          ''
+        ];
+
+        if (CONFIG.transcriptContextLabel) {
+          header.splice(3, 0, 'Context: ' + CONFIG.transcriptContextLabel);
+        }
+
+        return header.concat(state.transcripts).join('\r\n');
+      }
+
+      function downloadTextFile(filename, contents) {
+        const blob = new Blob([contents], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+
+      function downloadTranscript(reason) {
+        if (!state.transcripts.length) {
+          log('No transcript captured, nothing to download');
+          return;
+        }
+
+        const filename = 'genesys-transcript-' + reason + '-' + sanitiseFileDate(new Date()) + '.txt';
+        downloadTextFile(filename, buildTranscriptText(reason || 'manual'));
+        log('Transcript downloaded:', filename);
+      }
+
+      function handleTextLikeMessage(message) {
+        const timestamp = formatTimestamp(safeGet(message, 'channel.time', null));
+        const text = detectMessageText(message);
+        const direction = safeGet(message, 'direction', '');
+
+        if (!text) return;
+
+        if (direction === 'Inbound') {
+          addTranscriptLine(timestamp + ', [' + resolveCustomerName(message) + '] : ' + text);
+        } else if (direction === 'Outbound') {
+          addTranscriptLine(timestamp + ', [' + resolveAgentName(message) + '] > ' + text);
+        } else {
+          addTranscriptLine(timestamp + ', [Unknown] > ' + text);
+        }
+      }
+
+      function handleEventMessage(message) {
+        const timestamp = formatTimestamp(safeGet(message, 'channel.time', null));
+        const events = Array.isArray(message && message.events) ? message.events : [];
+
+        for (const evt of events) {
+          const isDisconnect =
+            evt &&
+            evt.eventType === 'Presence' &&
+            evt.presence &&
+            evt.presence.type === 'Disconnect';
+
+          if (isDisconnect) {
+            addTranscriptLine(timestamp + ', [System] Conversation disconnected');
+          }
+        }
+      }
+
+      function handleMessagesReceived(payload) {
+        log('messagesReceived payload:', payload);
+
+        const messages =
+          safeGet(payload, 'data.messages', null) ||
+          safeGet(payload, 'messages', []);
+
+        if (!Array.isArray(messages) || !messages.length) return;
+
+        for (const message of messages) {
+          const type = safeGet(message, 'type', '');
+
+          if (type === 'Text' || type === 'Structured') {
+            handleTextLikeMessage(message);
+          } else if (type === 'Event') {
+            handleEventMessage(message);
+          } else {
+            log('Unhandled message type:', type, message);
+          }
+        }
+      }
+
+      function promptAndDownload(reason, message) {
+        if (!state.transcripts.length) {
+          log('No transcript to offer for:', reason);
+          clearTranscript();
+          return;
+        }
+
+        const shouldDownload = window.confirm(message);
+        if (shouldDownload) {
+          downloadTranscript(reason);
+        }
+
+        clearTranscript();
+      }
+
+      function handleConversationDisconnected(payload) {
+        log('conversationDisconnected payload:', payload);
+
+        if (state.disconnectHandled) {
+          log('Disconnect already handled by conversationCleared, skipping');
+          return;
+        }
+
+        state.disconnectHandled = true;
+
+        if (CONFIG.promptDownloadOnDisconnect) {
+          promptAndDownload(
+            'agent-disconnect',
+            'The agent has ended the conversation. Would you like to save a transcript?'
+          );
+        } else {
+          clearTranscript();
+        }
+      }
+
+      function handleConversationCleared(payload) {
+        log('conversationCleared payload:', payload);
+
+        state.disconnectHandled = true;
+
+        if (CONFIG.promptDownloadOnClear) {
+          promptAndDownload(
+            'conversation-cleared',
+            'Would you like to save the transcript?'
+          );
+        } else {
+          clearTranscript();
+        }
+      }
+
+      function bindSubscriptions() {
+        if (state.subscriptionsBound) {
+          log('Subscriptions already bound, skipping');
+          return;
+        }
+
+        if (!window.Genesys || typeof window.Genesys !== 'function') {
+          throw new Error('Genesys is not available');
+        }
+
+        window.Genesys('subscribe', 'MessagingService.messagesReceived', handleMessagesReceived);
+        window.Genesys('subscribe', 'MessagingService.conversationCleared', handleConversationCleared);
+        window.Genesys('subscribe', 'MessagingService.conversationDisconnected', handleConversationDisconnected);
+
+        state.subscriptionsBound = true;
+        log('Genesys subscriptions bound');
+      }
+
+      function ensureGenesysStub() {
+        if (window.Genesys && typeof window.Genesys === 'function') {
+          if (!window.Genesys.c) {
+            window.Genesys.c = {
+              environment: CONFIG.environment,
+              deploymentId: CONFIG.deploymentId
+            };
+          }
+
+          return;
+        }
+
+        window._genesysJs = 'Genesys';
+        window.Genesys = function () {
+          (window.Genesys.q = window.Genesys.q || []).push(arguments);
         };
-
-        dlink.click();
-        dlink.remove();
+        window.Genesys.t = 1 * new Date();
+        window.Genesys.c = {
+          environment: CONFIG.environment,
+          deploymentId: CONFIG.deploymentId
+        };
       }
 
-      // load wav file for audible alerting
-      const ringing = new Audio("ringout.wav");
+      function loadGenesysSdk(timeoutMs) {
+        const timeout = timeoutMs || 30000;
+        const scriptId = 'genesys-messenger-sdk';
 
-      // popup download notification when trash button is clicked and confirmed by customer
-      Genesys(
-        "subscribe",
-        "MessagingService.conversationCleared",
-        function (data) {
-          console.log("MessagingService.conversationCleared:");
-          console.log(data);
-          if (transcripts.length > 0) {
-            let d = new Date(data.time);
-            if (confirm("Would you like to save the transcript?")) {
-              console.log("OK pressed");
-              download_file(`transcript-${d.toString()}.txt`, dynamic_text());
-            } else {
-              console.log("Cancel pressed");
-            }
-            transcripts.length = 0;
+        ensureGenesysStub();
+
+        return new Promise(function (resolve, reject) {
+          const existingScript = document.getElementById(scriptId);
+          let script = existingScript;
+          let timeoutHandle;
+
+          function cleanup() {
+            if (!script) return;
+            script.removeEventListener('load', handleLoad);
+            script.removeEventListener('error', handleError);
+            clearTimeout(timeoutHandle);
           }
-        }
-      );
-      
-      Genesys(
-        "subscribe",
-        "MessagingService.messagesReceived",
-        function ({ data }) {
-          console.log("messagesReceived:");
-          console.log(data);
-          for (const message of data.messages) {
-            let d = new Date(message.channel.time);
-            if (message.type === "Text") {
-              if (message.direction === "Inbound") {
-                // text message from client to agent
-                transcripts.push(
-                  `${d.toLocaleString()}, [${
-                    message.channel.metadata.customAttributes
-                      ? message.channel.metadata.customAttributes
-                          .customer_name || "You"
-                      : "Customer"
-                  }] : ${message.text}`
-                );
-              } else if (message.direction === "Outbound") {
-                // text message from agent to client
-                transcripts.push(
-                  `${d.toLocaleString()}, [${
-                    message.channel.from
-                      ? message.channel.from.nickname || "Agent"
-                      : message.originatingEntity
-                  }] > ${message.text}`
-                );
-                ringing.play(); // play audible alerting
-              }
-            } else if (message.type === "Event") {
-              for (const event of message.events) {
-                if (
-                  event.eventType === "Presence" &&
-                  event.presence.type === "Disconnect" &&
-                  transcripts.length > 0
-                ) {
-                  // disconnect message from agent
-                  if (confirm("Would you like to save the transcript?")) {
-                    console.log("OK pressed");
-                    download_file(
-                      `transcript-${d.toString()}.txt`,
-                      dynamic_text()
-                    );
-                  } else {
-                    console.log("Cancel pressed");
-                  }
-                  transcripts.length = 0; // clean up the transcript cache
-                  break;
-                }
-              }
+
+          function handleLoad() {
+            if (script) {
+              script.dataset.loaded = 'true';
             }
+            cleanup();
+            log('Genesys SDK loaded');
+            resolve();
           }
+
+          function handleError() {
+            cleanup();
+            reject(new Error('Genesys SDK failed to load'));
+          }
+
+          if (script && script.dataset.loaded === 'true') {
+            log('Genesys SDK already loaded');
+            resolve();
+            return;
+          }
+
+          if (!script) {
+            log('Injecting Genesys bootstrap');
+            script = document.createElement('script');
+            script.id = scriptId;
+            script.async = true;
+            script.src = CONFIG.bootstrapUrl;
+            script.charset = 'utf-8';
+          } else {
+            log('Waiting for existing Genesys bootstrap script');
+          }
+
+          script.addEventListener('load', handleLoad, { once: true });
+          script.addEventListener('error', handleError, { once: true });
+
+          if (!existingScript) {
+            document.head.appendChild(script);
+          }
+
+          timeoutHandle = setTimeout(function () {
+            cleanup();
+            reject(new Error('Genesys SDK did not load in time'));
+          }, timeout);
+        });
+      }
+
+      function openMessenger() {
+        try {
+          window.Genesys('command', 'Messenger.open', {}, function () {
+            log('Messenger open command sent');
+          });
+        } catch (e) {
+          warn('Could not open Messenger automatically', e);
         }
-      );
-    </script>
-  </body>
+      }
+
+      async function init() {
+        try {
+          await loadGenesysSdk(30000);
+
+          bindSubscriptions();
+
+          if (CONFIG.autoOpenMessenger) {
+            setTimeout(openMessenger, 1500);
+          }
+
+          log('Initialisation complete');
+        } catch (e) {
+          error('Initialisation failed', e);
+        }
+      }
+
+      init();
+    })();
+  </script>
+</body>
 </html>
